@@ -35,20 +35,31 @@ git clone https://github.com/<your-username>/code-screen-1.git
 cd code-screen-1
 ```
 
-### 2. Start all services
+### 2. Set Node version
 
+```bash
+nvm use 22
+```
+
+### 3. Build and start all services
+
+First time only, build the Docker images:
+```bash
+make dev
+```
+
+Then start all services:
 ```bash
 make up
 ```
 
-This single command will:
-- Build the Docker images (first run only)
+This will:
 - Start PostgreSQL database
 - Run database migrations automatically
 - Start the backend server
 - Start the frontend web app
 
-### 3. Access the application
+### 4. Access the application
 
 Once the containers are running:
 
