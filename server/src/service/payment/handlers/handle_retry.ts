@@ -24,7 +24,12 @@ export interface HandleRetryArgs {
  * - backoff: Do not reschedule
  * - not_possible: EFT failures that cannot be retried
  */
-export type RetryAction = 'instant' | 'scheduled_friday' | 'scheduled_friday_eom' | 'backoff' | 'not_possible';
+export type RetryAction =
+  | 'instant'
+  | 'scheduled_friday'
+  | 'scheduled_friday_eom'
+  | 'backoff'
+  | 'not_possible';
 
 /**
  * Time bucket classification based on days_overdue from billing cycle
@@ -40,7 +45,10 @@ const RETRY_LOGIC_VERSION = 1;
  */
 const NOT_POSSIBLE_CODES = new Set<number>([442, 443, 444, 445, 613, 615, 616, 640, 710]);
 
-const retryStrategy: Record<TimeBucket, Record<Exclude<RetryAction, 'not_possible'>, Set<number>>> = {
+const retryStrategy: Record<
+  TimeBucket,
+  Record<Exclude<RetryAction, 'not_possible'>, Set<number>>
+> = {
   '0-30D': {
     instant: new Set<number>([904]),
     scheduled_friday: new Set<number>([441, 701, 706]),
@@ -244,7 +252,17 @@ export default async function handle_retry({
 
   // Determine time bucket and action
   const timeBucket = getTimeBucket(days_overdue);
-  const action = getRetryAction(code, timeBucket);
+  let action = getRetryAction(code, timeBucket);
+
+  // Special Condition: 61-180D + retry_cnt > 12 for codes 441, 701, 706 → force Backoff
+  const CODES_WITH_RETRY_LIMIT_12 = new Set([441, 701, 706]);
+  if (
+    timeBucket === '61-180D' &&
+    CODES_WITH_RETRY_LIMIT_12.has(code) &&
+    payment.retry_sequence_nb > 12
+  ) {
+    action = 'backoff';
+  }
 
   if (action === null) {
     return Result.fail(
@@ -267,7 +285,9 @@ export default async function handle_retry({
     );
     return Result.fail(
       new ServerInternalError(
-        new Error(`Retry not possible for code ${code} - this is an EFT failure that cannot be retried`)
+        new Error(
+          `Retry not possible for code ${code} - this is an EFT failure that cannot be retried`
+        )
       )
     );
   }
@@ -309,6 +329,17 @@ export default async function handle_retry({
     retryReason = 'scheduled_friday_eom_or_balance_due';
   }
 
+  const retryTrack = code === 904 ? PaymentTrack.ANY_CARD : PaymentTrack.BANK_CARD;
+  const CODES_WITH_STRIPE_EXCLUSION = new Set([904, 441, 601, 701, 706]);
+  let retryRoutingCtx = payment.retry_routing_ctx ?? [];
+  if (
+    timeBucket === '31-60D' &&
+    CODES_WITH_STRIPE_EXCLUSION.has(code) &&
+    payment.retry_sequence_nb > 8
+  ) {
+    retryRoutingCtx = [...retryRoutingCtx, 'exclude_stripe'];
+  }
+
   // Create the retry payment
   try {
     const retryPayment = await Payment.create({
@@ -319,7 +350,7 @@ export default async function handle_retry({
       amount: payment.amount,
       type: payment.type ?? PaymentType.SUBSCRIPTION,
       direction: payment.direction ?? PaymentDirectionType.ACCOUNT_RECEIVABLE,
-      track: PaymentTrack.BANK_CARD,
+      track: retryTrack,
       status: PaymentStatus.SCHEDULED,
       payment_method: payment.payment_method_id
         ? { connect: { id: payment.payment_method_id } }
@@ -335,7 +366,7 @@ export default async function handle_retry({
       },
       retry_prev_payment_id: payment.id,
       retry_sequence_nb: payment.retry_sequence_nb + 1,
-      retry_routing_ctx: payment.retry_routing_ctx ?? [],
+      retry_routing_ctx: retryRoutingCtx,
       retry_annotation: `${action} retry of payment ${payment.id}`,
       retry_logic_version: RETRY_LOGIC_VERSION,
       retry_trace_data: {
