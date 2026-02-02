@@ -4,6 +4,7 @@ import Result from 'lib/Result';
 import Payment from 'model/Payment';
 import PaymentMethod from 'model/PaymentMethod';
 import CustomerAccount from 'model/CustomerAccount';
+import BillingCycle from 'model/BillingCycle';
 import { init_logger } from 'util/logger';
 import { PaymentStatusCode, is_hard_decline_code } from '../PaymentStatusCode';
 
@@ -25,6 +26,7 @@ export type HandleFailedPullFundsArgs = {
  * 2. Invalidates payment method on hard declines
  * 3. Updates customer account metrics
  * 4. Handles subscription-specific failure logic
+ * 5. Handles retries if applicable
  *
  * @param args - Payment, failure code, and optional reference date
  * @returns Result<Payment, ApplicationError>
@@ -74,7 +76,11 @@ export default async function handle_failed_pull_funds({
         },
         `Failed to update payment status to FAILED`
       );
-      return Result.fail(new ServerInternalError(new Error(update_result.error?.detail || 'Failed to update payment')));
+      return Result.fail(
+        new ServerInternalError(
+          new Error(update_result.error?.detail || 'Failed to update payment')
+        )
+      );
     }
 
     payment = update_result.data;
@@ -116,10 +122,32 @@ export default async function handle_failed_pull_funds({
       );
     }
 
-    // TODO: Add subscription-specific failure handling
-    // if (payment.subscription_id) {
-    //   await handle_failed_subscription_payment({ payment, code, ref_date });
-    // }
+    // Update billing cycle days_overdue
+    if (payment.billing_cycle_id) {
+      const billing_cycle_result = await BillingCycle.fetch_by_id(payment.billing_cycle_id);
+      if (billing_cycle_result.ok && billing_cycle_result.data) {
+        const billing_cycle = billing_cycle_result.data;
+        const days_overdue = Math.max(
+          0,
+          Math.floor(
+            (ref_date.getTime() - billing_cycle.end_date.getTime()) / (1000 * 60 * 60 * 24)
+          )
+        );
+
+        await BillingCycle.update(billing_cycle.id, {
+          days_overdue,
+        });
+
+        logger.info(
+          {
+            payment_id: payment.id,
+            billing_cycle_id: billing_cycle.id,
+            days_overdue,
+          },
+          `Updated billing cycle days_overdue`
+        );
+      }
+    }
 
     return Result.success(payment);
   } catch (e) {

@@ -26,6 +26,7 @@ export interface CreatePaymentInput {
   account_id: string;
   date: Date;
   amount: number;
+  status: PaymentStatus;
   type?: PaymentType;
   direction?: PaymentDirectionType;
   track?: PaymentTrack;
@@ -161,22 +162,12 @@ export default class Payment implements PrismaPayment {
     Object.assign(this, payment);
   }
 
-  static async create(input: CreatePaymentInput): Promise<Result<Payment, ApplicationError>> {
+  static async create(
+    input: Prisma.PaymentCreateInput
+  ): Promise<Result<Payment, ApplicationError>> {
     try {
       const payment = await db.payment.create({
-        data: {
-          account_id: input.account_id,
-          date: input.date,
-          amount: input.amount,
-          type: input.type ?? PaymentType.OTHER,
-          direction: input.direction,
-          track: input.track,
-          payment_method_id: input.payment_method_id,
-          payment_method_processor_id: input.payment_method_processor_id,
-          subscription_id: input.subscription_id,
-          billing_cycle_id: input.billing_cycle_id,
-          memo: input.memo,
-        },
+        data: input,
       });
 
       return Result.success(new Payment(payment));
@@ -192,6 +183,7 @@ export default class Payment implements PrismaPayment {
         include: {
           payment_method: true,
           payment_method_processor: true,
+          billing_cycle: true,
         },
       });
 
@@ -201,7 +193,9 @@ export default class Payment implements PrismaPayment {
     }
   }
 
-  static async fetch_by_account_id(account_id: string): Promise<Result<Payment[], ApplicationError>> {
+  static async fetch_by_account_id(
+    account_id: string
+  ): Promise<Result<Payment[], ApplicationError>> {
     try {
       const payments = await db.payment.findMany({
         where: { account_id },
@@ -218,7 +212,9 @@ export default class Payment implements PrismaPayment {
     }
   }
 
-  static async fetch_by_subscription_id(subscription_id: string): Promise<Result<Payment[], ApplicationError>> {
+  static async fetch_by_subscription_id(
+    subscription_id: string
+  ): Promise<Result<Payment[], ApplicationError>> {
     try {
       const payments = await db.payment.findMany({
         where: { subscription_id },
@@ -235,7 +231,9 @@ export default class Payment implements PrismaPayment {
     }
   }
 
-  static async fetch_by_billing_cycle_id(billing_cycle_id: string): Promise<Result<Payment[], ApplicationError>> {
+  static async fetch_by_billing_cycle_id(
+    billing_cycle_id: string
+  ): Promise<Result<Payment[], ApplicationError>> {
     try {
       const payments = await db.payment.findMany({
         where: { billing_cycle_id },
@@ -272,7 +270,10 @@ export default class Payment implements PrismaPayment {
     }
   }
 
-  static async update(id: string, input: UpdatePaymentInput): Promise<Result<Payment, ApplicationError>> {
+  static async update(
+    id: string,
+    input: UpdatePaymentInput
+  ): Promise<Result<Payment, ApplicationError>> {
     try {
       const payment = await db.payment.update({
         where: { id },

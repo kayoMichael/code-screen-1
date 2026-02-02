@@ -1,4 +1,4 @@
-DEV_DB_URI=postgresql://postgres:postgres@0.0.0.0:5432/codescreen?schema=public
+DEV_DB_URI=postgresql://postgres:postgres@0.0.0.0:5434/codescreen_1?schema=public
 
 # Build development Docker images
 dev:

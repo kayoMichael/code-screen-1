@@ -17,6 +17,7 @@ import pull_funds_provider_3_processor from './processors/pull_funds_provider_3_
 import pull_funds_provider_4_processor from './processors/pull_funds_provider_4_processor';
 import handle_successful_pull_funds from '../handlers/handle_successful_pull_funds';
 import handle_failed_pull_funds from '../handlers/handle_failed_pull_funds';
+import handle_retry from '../handlers/handle_retry';
 
 const logger = init_logger('pull_funds');
 
@@ -263,6 +264,10 @@ export default async function pull_funds({
         ref_date: ref_date || new Date(),
       });
       payment = fail_result.safe_unwrap() || payment;
+      const result = await handle_retry({ payment });
+      if (result.ok) {
+        payment = result.safe_unwrap();
+      }
     }
 
     return Result.success(payment);

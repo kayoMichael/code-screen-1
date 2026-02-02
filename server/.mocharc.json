@@ -1,0 +1,16 @@
+{
+  "extension": ["ts"],
+  "spec": "./src/test/unit/**/*.ts",
+  "require": [
+    "ts-node/register",
+    "tsconfig-paths/register"
+  ],
+  "recursive": true,
+  "timeout": 20000,
+  "color": true,
+  "inline-diffs": true,
+  "node-option": [
+    "no-warnings",
+    "experimental-specifier-resolution=node"
+  ]
+}
